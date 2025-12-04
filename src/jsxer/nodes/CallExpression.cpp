@@ -32,8 +32,15 @@ namespace jsxer::nodes {
                 if (result.back() == ';') {
                     result.pop_back();
                 }
+                if (result.back() == ';') {
+                    result.pop_back();
+                }
 
-                return result;
+                if (result.find("var ") == 0 || result.find("function") == 0) {
+                    return result;
+                }
+
+                return "(" + result + ")";
             }
 
         }

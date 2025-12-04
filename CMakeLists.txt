@@ -13,7 +13,7 @@ Set(FETCHCONTENT_QUIET FALSE)
 # string formatting
 FetchContent_Declare(fmt
     GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-    GIT_TAG 9.1.0
+    GIT_TAG 11.0.2
     GIT_PROGRESS TRUE
 )
 FetchContent_MakeAvailable(fmt)
@@ -21,7 +21,7 @@ FetchContent_MakeAvailable(fmt)
 # logger
 FetchContent_Declare(plog
     GIT_REPOSITORY https://github.com/SergiusTheBest/plog.git
-    GIT_TAG 1.1.9
+    GIT_TAG 1.1.11
     GIT_PROGRESS TRUE
 )
 FetchContent_MakeAvailable(plog)
@@ -29,7 +29,7 @@ FetchContent_MakeAvailable(plog)
 # cli parser
 FetchContent_Declare(cli11
     GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
-    GIT_TAG v2.3.2
+    GIT_TAG v2.6.0
     GIT_PROGRESS TRUE
 )
 FetchContent_MakeAvailable(cli11)
@@ -227,3 +227,19 @@ add_executable(jsxer-test-for-stmt ${JSXER_TESTS_SRC_DIR}/for-stmt.cpp)
 target_link_libraries(jsxer-test-for-stmt PRIVATE ${JSXER_CORE_TARGET})
 
 add_test("ForStatement" jsxer-test-for-stmt)
+
+add_executable(jsxer-test-number-member ${JSXER_TESTS_SRC_DIR}/number-member.cpp)
+target_link_libraries(jsxer-test-number-member PRIVATE ${JSXER_CORE_TARGET})
+
+add_test("NumberMember" jsxer-test-number-member)
+
+add_executable(jsxer-test-complex ${JSXER_TESTS_SRC_DIR}/complex.cpp)
+target_link_libraries(jsxer-test-complex PRIVATE ${JSXER_CORE_TARGET})
+
+add_test("Complex" jsxer-test-complex)
+
+add_executable(jsxer-test-string-concat ${JSXER_TESTS_SRC_DIR}/string-concat.cpp)
+target_link_libraries(jsxer-test-string-concat PRIVATE ${JSXER_CORE_TARGET})
+
+add_test("StringConcat" jsxer-test-string-concat)
+

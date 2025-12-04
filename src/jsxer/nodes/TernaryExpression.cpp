@@ -3,7 +3,7 @@
 
 namespace jsxer::nodes {
     bool parenthesis(const AstOpNode& node) {
-        return (node->type() == NodeType::TernaryExpression) && (node->type() == NodeType::ListExpression);
+        return (node->type() == NodeType::TernaryExpression) || (node->type() == NodeType::ListExpression);
     }
 
     void TernaryExpression::parse() {
