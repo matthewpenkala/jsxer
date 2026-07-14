@@ -58,21 +58,21 @@ string hex_escape(uint8_t value, bool capital = false) {
 
 bool is_non_printable_ascii(uint32_t value) {
     // ([\x00-\x07\x0E-\x1F\x7F])
-    return in_range_i(0, 7, value) ||
-           in_range_i(0x0E, 0x1F, value) || (value == 0x7F);
+    return value <= 7 ||
+           (value >= 0x0E && value <= 0x1F) || (value == 0x7F);
 }
 
 bool is_non_printable_utf8(uint32_t value) {
     // ([\x00-\x07\x0E-\x1F\x7F\x80-\xFF])
-    return is_non_printable_ascii(value) || in_range_i(0x80, 0xFF, value);
+    return is_non_printable_ascii(value) || (value >= 0x80 && value <= 0xFF);
 }
 
 bool is_non_printable_utf16(uint32_t value) {
-    return is_non_printable_ascii(value) || in_range_i(0x80, 0xFF, value) || (value > 0xFF);
+    return is_non_printable_ascii(value) || (value >= 0x80 && value <= 0xFF) || (value > 0xFF);
 }
 
 string escape_hex_or_unicode(uint16_t value, bool capital = false) {
-    if (in_range_i(0x00, 0xFF, value)) {
+    if (value <= 0xFF) {
         return hex_escape((uint8_t) value, capital);
     }
 

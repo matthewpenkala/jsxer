@@ -280,17 +280,17 @@ jsxer::decoders::FunctionSignature jsxer::decoders::d_fn_sig(Reader& reader) {
 
 inline
 bool is_capital_alpha(uint32_t value) {
-    return in_range_i('A', 'Z', value);
+    return value >= static_cast<uint32_t>('A') && value <= static_cast<uint32_t>('Z');
 }
 
 inline
 bool is_small_alpha(uint32_t value) {
-    return in_range_i('a', 'z', value);
+    return value >= static_cast<uint32_t>('a') && value <= static_cast<uint32_t>('z');
 }
 
 inline
 bool is_numerical_digit(uint32_t value) {
-    return in_range_i('0', '9', value);
+    return value >= static_cast<uint32_t>('0') && value <= static_cast<uint32_t>('9');
 }
 
 /* Validator for an id's first character */
