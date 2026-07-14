@@ -6,6 +6,8 @@
 #include "decoders.h"
 #include "nodes/nodes.h"
 
+#include <cctype>
+#include <cstring>
 #include <fmt/format.h>
 
 enum LiteralType {
@@ -19,25 +21,29 @@ enum NumberType : int {
 };
 
 string d_number_primitive(jsxer::Reader& reader, int length, bool negative) {
-     vector<byte> buffer(length);
+    vector<byte> buffer(static_cast<size_t>(length));
 
     for (int i = 0; i < length; ++i) {
         buffer[i] = jsxer::decoders::d_byte(reader);
     }
 
-    short sign = negative ? -1 : 1;
-
     // using the length, return the appropriate interpretation of the value...
     switch (length) {
-        case kDouble:
-            // result is a double...
-            return fmt::to_string(*((double *) buffer.data()) * sign);
-        case kInteger:
-            // result is an integer...
-            return fmt::to_string(*((uint32_t *) buffer.data()) * sign);
-        case kShort:
-            // result is a short...
-            return fmt::to_string(*((uint16_t *) buffer.data()) * sign);
+        case kDouble: {
+            double value = 0.0;
+            std::memcpy(&value, buffer.data(), sizeof(value));
+            return fmt::format("{}", negative ? -value : value);
+        }
+        case kInteger: {
+            uint32_t value = 0;
+            std::memcpy(&value, buffer.data(), sizeof(value));
+            return negative ? "-" + std::to_string(value) : std::to_string(value);
+        }
+        case kShort: {
+            uint16_t value = 0;
+            std::memcpy(&value, buffer.data(), sizeof(value));
+            return negative ? "-" + std::to_string(value) : std::to_string(value);
+        }
         default:
             return "";
     }
@@ -69,10 +75,10 @@ string d_literal_primitive(jsxer::Reader& reader, LiteralType literalType) {
         byte num = jsxer::decoders::d_byte(reader);
 
         if (negative) {
-            return fmt::to_string(-1 * (int) num);
+            return std::to_string(-1 * static_cast<int>(num));
         } else {
             if (literalType == LiteralType::NUMBER) {
-                return fmt::to_string((unsigned char) num);
+                return std::to_string(static_cast<unsigned char>(num));
             } else {
                 return jsxer::utils::string_literal_escape(num);
             }
@@ -82,11 +88,22 @@ string d_literal_primitive(jsxer::Reader& reader, LiteralType literalType) {
 
 int jsxer::decoders::d_literal_num(Reader& reader) {
     string value = d_literal_primitive(reader, LiteralType::NUMBER);
-    return value.empty() ? 0 : stoi(value);
+    if (value.empty()) {
+        return 0;
+    }
+
+    try {
+        return stoi(value);
+    } catch (const std::exception&) {
+        return 0;
+    }
 }
 
 jsxer::nodes::AstOpNode jsxer::decoders::d_node(Reader& reader) {
     Token marker = reader.get();
+    if (reader.error() != ParseError::None) {
+        return nullptr;
+    }
 
     auto node = nodes::get((jsxer::nodes::NodeType) marker, reader);
 
@@ -96,7 +113,10 @@ jsxer::nodes::AstOpNode jsxer::decoders::d_node(Reader& reader) {
         return node;
     }
 
-    // TODO: handle this
+    if (marker != static_cast<Token>(nodes::NodeType::EmptyExpression)) {
+        reader.fail_decode();
+    }
+
     return nullptr;
 }
 
@@ -104,7 +124,12 @@ string jsxer::decoders::d_number(Reader& reader) {
     string num;
 
     // if the marker suggests
-    if (reader.get() == '8') {
+    const Token marker = reader.get();
+    if (reader.error() != ParseError::None) {
+        return "0";
+    }
+
+    if (marker == '8') {
         num = d_number_primitive(reader, 8, false);
     } else {
         reader.step(-1);
@@ -158,14 +183,18 @@ size_t jsxer::decoders::d_length(Reader& reader) {
         if (value[0] == '-') {
             value.erase(0,1);
         }
-        return stoul(value);
+        try {
+            return stoull(value);
+        } catch (const std::exception&) {
+            return 0;
+        }
     }
 
     return 0;
 }
 
 string jsxer::decoders::d_sid(Reader& reader) {
-    return utils::to_string(reader.readSID());
+    return utils::to_identifier(reader.readSID());
 }
 
 string jsxer::decoders::d_operator(Reader& reader) {
@@ -176,11 +205,13 @@ vector<jsxer::nodes::AstOpNode> jsxer::decoders::d_children(Reader& reader) {
     size_t length = d_length(reader);
 
     vector<AstOpNode> result;
-    for (int i = 0; i < length; ++i) {
-        auto child = d_node(reader);
-        if (child != nullptr) {
-            result.push_back(child);
-        }
+    if (reader.error() != ParseError::None || !reader.claim_work(length)) {
+        return result;
+    }
+
+    result.reserve(length);
+    for (size_t i = 0; i < length; ++i) {
+        result.push_back(d_node(reader));
     }
 
     return result;
@@ -194,8 +225,11 @@ jsxer::decoders::LineInfo jsxer::decoders::d_line_info(Reader& reader) {
     result.child = d_node(reader);
 
     size_t length = d_length(reader);
+    if (reader.error() != ParseError::None || !reader.claim_work(length)) {
+        return result;
+    }
 
-    for (int i = 0; i < length; ++i) {
+    for (size_t i = 0; i < length; ++i) {
         result.labels.push_back(d_sid(reader));
     }
 
@@ -207,7 +241,11 @@ jsxer::decoders::FunctionSignature jsxer::decoders::d_fn_sig(Reader& reader) {
 
     // identifiers/variables in func scope
     size_t n_vars = d_length(reader); // readInt
-    for (int i = 0; i < n_vars; ++i) {
+    if (reader.error() != ParseError::None || !reader.claim_work(n_vars)) {
+        return result;
+    }
+
+    for (size_t i = 0; i < n_vars; ++i) {
         string sid = d_sid(reader);
         size_t id_seq = d_length(reader); // readInt
 
@@ -242,17 +280,17 @@ jsxer::decoders::FunctionSignature jsxer::decoders::d_fn_sig(Reader& reader) {
 
 inline
 bool is_capital_alpha(uint32_t value) {
-    return in_range_i('A', 'Z', value);
+    return value >= static_cast<uint32_t>('A') && value <= static_cast<uint32_t>('Z');
 }
 
 inline
 bool is_small_alpha(uint32_t value) {
-    return in_range_i('a', 'z', value);
+    return value >= static_cast<uint32_t>('a') && value <= static_cast<uint32_t>('z');
 }
 
 inline
 bool is_numerical_digit(uint32_t value) {
-    return in_range_i('0', '9', value);
+    return value >= static_cast<uint32_t>('0') && value <= static_cast<uint32_t>('9');
 }
 
 /* Validator for an id's first character */
@@ -271,21 +309,40 @@ bool valid_id_x(uint32_t value) {
 
 // decoding utilities...
 bool jsxer::decoders::valid_id(const string& value) {
-    // ^[a-zA-Z_$][0-9a-zA-Z_$]*$
-    size_t len = value.length();
+    if (value.empty()) {
+        return false;
+    }
 
-    if (len > 0) {
-        if (valid_id_0(value[0])) {
-            for (int i = 1; i < len; ++i) {
-                if (!valid_id_x(value[i])) {
-                    return false;
-                }
+    auto is_unicode_escape = [&value](size_t offset) {
+        if (offset + 6 > value.size() || value[offset] != '\\' || value[offset + 1] != 'u') {
+            return false;
+        }
+
+        for (size_t i = offset + 2; i < offset + 6; ++i) {
+            if (!std::isxdigit(static_cast<unsigned char>(value[i]))) {
+                return false;
             }
+        }
+        return true;
+    };
+
+    size_t offset = 0;
+    if (is_unicode_escape(offset)) {
+        offset += 6;
+    } else if (valid_id_0(static_cast<unsigned char>(value[offset]))) {
+        ++offset;
+    } else {
+        return false;
+    }
+
+    while (offset < value.size()) {
+        if (is_unicode_escape(offset)) {
+            offset += 6;
+        } else if (valid_id_x(static_cast<unsigned char>(value[offset]))) {
+            ++offset;
         } else {
             return false;
         }
-    } else {
-        return false;
     }
 
     return true;
@@ -297,7 +354,7 @@ bool jsxer::decoders::valid_id(const ByteString& value) {
 
     if (len > 0) {
         if (valid_id_0(value[0])) {
-            for (int i = 1; i < len; ++i) {
+            for (size_t i = 1; i < len; ++i) {
                 if (!valid_id_x(value[i])) {
                     return false;
                 }
@@ -313,11 +370,11 @@ bool jsxer::decoders::valid_id(const ByteString& value) {
 }
 
 bool jsxer::decoders::valid_xml_attribute(const ByteString& value) {
-
-    if (value.size() <= 1 && value[0] != '@')
+    if (value.size() <= 1 || value.front() != '@') {
         return false;
+    }
 
-    ByteString id(&value[1], &value[value.size() - 1]);
+    ByteString id(value.begin() + 1, value.end());
 
     if (!valid_id(id))
         return false;
@@ -326,9 +383,13 @@ bool jsxer::decoders::valid_xml_attribute(const ByteString& value) {
 }
 
 bool jsxer::decoders::is_integer(const string& value) {
+    if (value.empty()) {
+        return false;
+    }
+
     size_t len = value.length();
 
-    for (int i = 0; i < len; ++i) {
+    for (size_t i = 0; i < len; ++i) {
         if (!is_numerical_digit(value[i])) {
             return false;
         }
@@ -338,9 +399,13 @@ bool jsxer::decoders::is_integer(const string& value) {
 }
 
 bool jsxer::decoders::is_integer(const ByteString& value) {
+    if (value.empty()) {
+        return false;
+    }
+
     size_t len = value.size();
 
-    for (int i = 0; i < len; ++i) {
+    for (size_t i = 0; i < len; ++i) {
         if (!is_numerical_digit(value[i])) {
             return false;
         }

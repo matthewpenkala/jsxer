@@ -58,11 +58,11 @@ bool is_ecma3_compliant_name(const ByteString &symbol) {
     uint16_t first = symbol[0];
 
     // check if first character is numeric
-    if (in_range_i(0x29, 0x40, first))
+    if (first >= 0x29 && first <= 0x40)
         return false;
 
     // check if the first character is a unicode combining diacritical mark
-    if (in_range_i(0x0300, 0x036F, first))
+    if (first >= 0x0300 && first <= 0x036F)
         return false;
 
     // check if the first character is a unicode punctuation connector

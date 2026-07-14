@@ -10,11 +10,11 @@ namespace jsxer::nodes {
     string MemberExpression::to_string() {
         string result = (objInfo == nullptr ? "" : objInfo->to_string());
 
-        if (decoders::is_integer(result) || (objInfo->type() == NodeType::BinaryExpression)) {
+        if (decoders::is_integer(result) || (objInfo != nullptr && objInfo->type() == NodeType::BinaryExpression) || (!result.empty() && result[0] >= '0' && result[0] <= '9') || (result.find('?') != string::npos && result.find(':') != string::npos)) {
             result = '(' + result + ')';
         }
 
-        if (objInfo->type() == NodeType::AssignmentExpression || objInfo->type() == NodeType::LocalAssignmentExpression)
+        if (objInfo != nullptr && (objInfo->type() == NodeType::AssignmentExpression || objInfo->type() == NodeType::LocalAssignmentExpression))
             result = '(' + result + ')';
 
         // Check member validity...

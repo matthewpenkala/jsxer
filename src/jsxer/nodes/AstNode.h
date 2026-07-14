@@ -10,6 +10,8 @@ namespace jsxer::nodes {
     public:
         explicit AstNode(Reader &reader) : reader(reader) {};
 
+        virtual ~AstNode() = default;
+
         virtual NodeType type() = 0;
 
         virtual string to_string() = 0;

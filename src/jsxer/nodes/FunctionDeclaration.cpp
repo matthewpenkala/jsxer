@@ -1,7 +1,5 @@
 #include "FunctionDeclaration.h"
 
-#include <fmt/printf.h>
-
 namespace jsxer::nodes {
     enum VariableTypeRange : int {
         kArguments = 0x20000000,
@@ -23,10 +21,17 @@ namespace jsxer::nodes {
         vector<string> vars;
         vector<string> consts;
 
-        for (int i = 0; i < signature.num_args; ++i) {
-            uint32_t k = kArguments + i;
-            auto v = signature.variables[k];
-            args.push_back(v);
+        if (signature.num_args > signature.variables.size()) {
+            return "// Jsxer: function signature recovery failed.";
+        }
+
+        for (size_t i = 0; i < signature.num_args; ++i) {
+            const size_t k = kArguments + i;
+            const auto variable = signature.variables.find(k);
+            if (variable == signature.variables.end()) {
+                return "// Jsxer: function signature recovery failed.";
+            }
+            args.push_back(variable->second);
         }
 
         // not used for de-compilation

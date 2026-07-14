@@ -4,7 +4,7 @@
 namespace jsxer::nodes {
     void LocalAssignmentExpression::parse() {
         var_name = decoders::d_sid(reader);
-        unsigned int type = (unsigned int) decoders::d_length(reader);
+        [[maybe_unused]] const auto type = decoders::d_length(reader);
         expression = decoders::d_node(reader);
         literal = decoders::d_variant(reader);
         shorthand = reader.getBoolean();

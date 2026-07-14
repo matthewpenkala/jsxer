@@ -18,6 +18,6 @@ namespace jsxer::nodes {
 
     private:
         decoders::Reference reference;
-        int _type = 0;
+        size_t _type = 0;
     };
 }
