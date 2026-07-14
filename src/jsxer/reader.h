@@ -75,6 +75,8 @@ public:
     [[nodiscard]] ParseError error() const;
     [[nodiscard]] size_t depth() const;
     [[nodiscard]] bool should_unblind() const;
+    bool claim_work(size_t count);
+    void fail_decode();
     bool verifySignature();
 
     Token get();
@@ -100,10 +102,9 @@ public:
 
 private:
     vector<Token> _data;
-    size_t _start;
-    size_t _end;
     size_t _cursor;
     size_t _depth;
+    size_t _work_budget;
     ParseError _error;
     JsxbinVersion _version;
 

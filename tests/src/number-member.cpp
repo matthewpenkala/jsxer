@@ -1,61 +1,26 @@
-#include <jsxer.h>
-#include <fstream>
-#include <sstream>
-#include <iostream>
-#include <string>
-
-std::string readFile(const std::string& path) {
-    std::ifstream t(path, std::ios::binary);
-    if (!t.is_open()) {
-        std::cerr << "Could not open file: " << path << std::endl;
-        return "";
-    }
-    std::stringstream buffer;
-    buffer << t.rdbuf();
-    return buffer.str();
-}
+#include "common.h"
 
 int main() {
-    // Read the jsxbin file
-    std::string jsxbinPath = "../tests/data/jsxbin/test_number_member.jsxbin";
-    std::string jsxbin = readFile(jsxbinPath);
-    if (jsxbin.empty()) {
-        jsxbinPath = "C:/Users/BetaTest/Downloads/fix_jsxer/tests/data/jsxbin/test_number_member.jsxbin";
-        jsxbin = readFile(jsxbinPath);
-        if (jsxbin.empty()) {
-            std::cerr << "Could not read jsxbin file." << std::endl;
-            return 1;
-        }
-    }
+    const std::string compiled = jsxer::test::read_file(
+        jsxer::test::data_path("jsxbin", "test_number_member.jsxbin")
+    );
 
     std::string decompiled;
-    int err = jsxer::decompile(jsxbin.c_str(), decompiled);
-
-    if (err != 0) {
-        std::cerr << "Decompilation failed with error code: " << err << std::endl;
+    if (jsxer::decompile_test(compiled, decompiled) != 0) {
+        std::cerr << "Number-member fixture failed to decompile." << std::endl;
         return 1;
     }
 
-    std::cout << "Decompiled output:" << std::endl;
-    std::cout << decompiled << std::endl;
+    const std::string normalized = jsxer::test::remove_whitespace(decompiled);
+    const bool valid =
+        normalized.find("60.toString()") == std::string::npos &&
+        normalized.find("(60).toString()") != std::string::npos &&
+        normalized.find("(0).toString()") != std::string::npos &&
+        normalized.find("(30).toString()") != std::string::npos &&
+        normalized.find("(20).toString()") != std::string::npos;
 
-    // Check for invalid syntax patterns
-    if (decompiled.find("60.toString()") != std::string::npos ||
-        decompiled.find("0.toString()") != std::string::npos ||
-        decompiled.find("30.toString()") != std::string::npos ||
-        decompiled.find("20.toString()") != std::string::npos) {
-        std::cerr << "ERROR: Found invalid syntax like '60.toString()'" << std::endl;
-        std::cerr << "Expected: '(60).toString()'" << std::endl;
-        return 1;
-    }
-
-    // Check for valid syntax patterns
-    if (decompiled.find("(60).toString()") != std::string::npos &&
-        decompiled.find("(0).toString()") != std::string::npos) {
-        std::cout << "SUCCESS: All number literals are correctly wrapped in parentheses" << std::endl;
-        return 0;
-    }
-
-    std::cerr << "WARNING: Expected patterns not found in output" << std::endl;
-    return 1;
+    return jsxer::test::require(
+        valid,
+        "Numeric member access was not parenthesized correctly.\n" + decompiled
+    ) ? 0 : 1;
 }

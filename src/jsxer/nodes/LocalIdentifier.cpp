@@ -8,6 +8,6 @@ namespace jsxer::nodes {
     }
 
     string LocalIdentifier::to_string() {
-        return utils::to_string(reference.id);
+        return utils::to_identifier(reference.id);
     }
 }

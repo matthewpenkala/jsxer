@@ -3,6 +3,10 @@
 
 namespace jsxer::nodes {
     bool parenthesis(const AstOpNode& node) {
+        if (node == nullptr) {
+            return false;
+        }
+
         return (node->type() == NodeType::TernaryExpression) || (node->type() == NodeType::ListExpression);
     }
 
@@ -13,6 +17,10 @@ namespace jsxer::nodes {
     }
 
     string TernaryExpression::to_string() {
+        if (condition == nullptr || node_true == nullptr || node_false == nullptr) {
+            return "";
+        }
+
         return condition->to_string() + " ? " +
                (parenthesis(node_true) ? '(' + node_true->to_string() + ')' : node_true->to_string())
                + " : "

@@ -1,32 +1,82 @@
+name: CI
+
 on:
+  push:
+    branches: [master]
   pull_request:
     branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  run-tests:
-    name: Run Tests - ${{ matrix.os }}
+  build-and-test:
+    name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-
+    timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
-        # macos arm64, macos x86_64, and windows
-        # at the time of writing this, you need to have macos-13 in order to build for x86.
-        os: [macos-latest, macos-13, windows-latest]
+        include:
+          - name: Linux x64 (GCC)
+            os: ubuntu-24.04
+          - name: Linux arm64 (GCC)
+            os: ubuntu-24.04-arm
+          - name: macOS arm64 (Apple Clang)
+            os: macos-15
+          - name: macOS x64 (Apple Clang)
+            os: macos-15-intel
+          - name: Windows / VS 2022
+            os: windows-2022
+          - name: Windows 2025
+            os: windows-2025
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Install CMake
-        uses: jwlawson/actions-setup-cmake@v1.13.1
-        with:
-          cmake-version: '3.26'
+      - name: Configure
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DJSXER_WARNINGS_AS_ERRORS=ON
 
-      - name: Configure CMake
-        run: cmake .
+      - name: Build
+        run: cmake --build build --config Release --parallel
 
-      - name: Build Project
-        run: cmake --build . --config debug
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
 
-      - name: Run Tests
-        run: ctest
+      - name: Verify install layout
+        run: cmake --install build --config Release --prefix staging
+
+  sanitizers:
+    name: Linux x64 (ASan + UBSan)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build-sanitized
+          -DCMAKE_BUILD_TYPE=Debug
+          -DJSXER_WARNINGS_AS_ERRORS=ON
+          "-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer"
+          "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined"
+          "-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address,undefined"
+
+      - name: Build
+        run: cmake --build build-sanitized --parallel
+
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=1:strict_string_checks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ctest --test-dir build-sanitized --output-on-failure

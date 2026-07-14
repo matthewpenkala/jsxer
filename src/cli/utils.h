@@ -1,35 +1,33 @@
+#pragma once
+
 #include <filesystem>
 #include <fstream>
-#include <string>
 #include <iterator>
-
-namespace fs = std::filesystem;
+#include <stdexcept>
+#include <string>
 
 namespace utils {
-    std::vector<unsigned char> ReadFileContents(const fs::path& path) {
-        //  std::ios::binary    -> makes it read as binary
-        std::ifstream f(path, std::ios::binary);
-
-        // Stop eating new lines in binary mode!!!
-        f.unsetf(std::ios::skipws);
-
-        // move cursor to start
-        f.seekg(0, std::ios::beg);
-
-        return {
-            std::istream_iterator<unsigned char>(f),
-            std::istream_iterator<unsigned char>()
-        };
+inline std::string read_file_contents(const std::filesystem::path& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        throw std::runtime_error("Unable to open input file: " + path.string());
     }
 
-    size_t WriteFileContents(const fs::path& path, const std::string& contents) {
-        //  std::ios::binary    -> makes it read as binary
-        std::ofstream f(path);
+    return {
+        std::istreambuf_iterator<char>(file),
+        std::istreambuf_iterator<char>()
+    };
+}
 
-        // move cursor to start
-        f << contents;
-        f.close();
+inline void write_file_contents(const std::filesystem::path& path, const std::string& contents) {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    if (!file) {
+        throw std::runtime_error("Unable to open output file: " + path.string());
+    }
 
-        return contents.size();
+    file.write(contents.data(), static_cast<std::streamsize>(contents.size()));
+    if (!file) {
+        throw std::runtime_error("Unable to write output file: " + path.string());
     }
 }
+} // namespace utils

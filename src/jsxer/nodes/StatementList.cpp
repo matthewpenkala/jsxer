@@ -6,7 +6,11 @@ namespace jsxer::nodes {
         body = decoders::d_line_info(reader);
 
         length = decoders::d_length(reader);
-        for (int i = 0; i < length; ++i) {
+        if (reader.error() != ParseError::None || !reader.claim_work(length)) {
+            return;
+        }
+
+        for (size_t i = 0; i < length; ++i) {
             statements.push_back(decoders::d_node(reader));
         }
 
@@ -20,7 +24,11 @@ namespace jsxer::nodes {
         // A seemingly useless sorting step (by line number of statements) happens here (where this comment is) in the original project,
         // but I removed it. We'll see what happens when I test it...
 
-        for (int i = 0; i < statements.size(); ++i) {
+        for (size_t i = 0; i < statements.size(); ++i) {
+            if (statements[i] == nullptr) {
+                continue;
+            }
+
             string expression = statements[i]->to_string();
 
 //        if (statements[i]->type() == NodeType::ExpressionStatement)

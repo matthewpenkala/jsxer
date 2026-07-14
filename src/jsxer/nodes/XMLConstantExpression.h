@@ -17,6 +17,6 @@ namespace jsxer::nodes {
         string to_string() override;
 
     private:
-        map<AstOpNode, unsigned long> children;
+        vector<std::pair<AstOpNode, size_t>> children;
     };
 }

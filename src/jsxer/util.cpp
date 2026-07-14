@@ -9,7 +9,7 @@
 BEGIN_NS(jsxer) BEGIN_NS(utils)
 
 bool string_equal(const string &str1, const string &str2) {
-    return strncmp(str1.c_str(), str2.c_str(), MIN(str1.length(), str2.length())) == 0;
+    return str1 == str2;
 }
 
 void string_replace_char(string &str, char search, char replace) {
@@ -79,10 +79,10 @@ string escape_hex_or_unicode(uint16_t value, bool capital = false) {
     return unicode_escape(value, capital);
 }
 
-string string_join(vector<string> strings, const string& delimiter) {
+string string_join(const vector<string>& strings, const string& delimiter) {
     string result;
 
-    for (int i = 0; i < strings.size(); ++i) {
+    for (size_t i = 0; i < strings.size(); ++i) {
         result += strings[i];
 
         if (i + 1 != strings.size()) {
@@ -134,7 +134,7 @@ string string_literal_unescape(const string& value) {
 
     string result;
 
-    for (int i = 0; i < value.size(); ++i) {
+    for (size_t i = 0; i < value.size(); ++i) {
         if (value[i] != '\\' || i + 1 == value.size()) {
             result += value[i];
             continue;
@@ -177,13 +177,12 @@ string string_literal_unescape(const string& value) {
 }
 
 string from_string_literal(const string &value) {
+    if (value.size() < 2 || (value.front() != '\"' && value.front() != '\'') ||
+        value.back() != value.front()) {
+        return value;
+    }
 
-    string x = value;
-    x.erase(0, 1);
-    x.erase(x.size() - 1, 1);
-    x = string_literal_unescape(x);
-
-    return x;
+    return string_literal_unescape(value.substr(1, value.size() - 2));
 }
 
 string to_string_literal(const ByteString &value, bool capital) {
@@ -216,6 +215,20 @@ string to_string(const ByteString &value) {
     return res;
 }
 
+string to_identifier(const ByteString &value) {
+    string result;
+
+    for (const auto code_unit : value) {
+        if (code_unit <= 0x7f) {
+            result += static_cast<char>(code_unit);
+        } else {
+            result += unicode_escape(code_unit);
+        }
+    }
+
+    return result;
+}
+
 ByteString to_byte_string(const string &value) {
     ByteString res;
 
@@ -245,7 +258,7 @@ int byte_length(uint64_t value) {
     int len = sizeof(uint64_t);
     auto *p = (uint8_t *) &value;
 
-    while ((p[len - 1] == 0) && len) {
+    while (len > 0 && p[len - 1] == 0) {
         len--;
     }
 
@@ -300,7 +313,6 @@ string simplify_number_literal(const string &value) {
     if (es.size() > 1) {
         auto e2 = es[1];
         if (e2.length()) {
-            char sign = e2[0];
             for (char i: e2.substr(1)) {
                 if (i != '0') {
                     goto skip_e_sfy;
@@ -315,25 +327,17 @@ skip_e_sfy:
 
     // trim prefix zeroes
     auto d1 = ds[0];
-    for (int i = 0; i < d1.length(); ++i) {
-        if (d1[i] != '0') {
-            d1 = d1.substr(i, d1.length() - i);
-            break;
-        }
+    while (d1.size() > 1 && d1.front() == '0') {
+        d1.erase(d1.begin());
     }
-    result = d1;
+    result = d1.empty() ? "0" : d1;
 
     // trim suffix zeroes
     if (ds.size() > 1) {
         auto d2 = ds[1];
 
-        if (d2.length()) {
-            for (size_t i = d2.length() - 1; i >= 0; --i) {
-                if (d2[i] != '0') {
-                    d2 = d2.substr(0, i + 1);
-                    break;
-                }
-            }
+        while (!d2.empty() && d2.back() == '0') {
+            d2.pop_back();
         }
 
         if (d2.length()) {
@@ -345,95 +349,17 @@ skip_e_sfy:
 }
 
 string number_to_string(double value) {
-    // let's try fmt to do all the dirty works
-    // TODO:
-    //  Write a full NumberToString test to confirm
-    //  if it's okay for us to keep fmt for this job
-    {
-        string result;
+    string result;
 
-        // integer        -> 1-7 bytes
-        // double         -> 8 bytes
-        // sign           -> 63rd bit
-        if (is_number_negative(value)) { // is the sign(63rd) bit is set
-            result += '-';
-        }
-
-        if (is_number_integer(value)) { // is byte_length < 8
-            auto i = number_to_integer(value);
-            result += fmt::format("{}", i);
-        } else {
-            auto d = number_to_double(value);
-            result += fmt::format("{}", d);
-        }
-
-        return result;
+    if (is_number_negative(value)) {
+        result += '-';
     }
 
-    // our dirty impl
-    {
-        char _buff[40] = {0};
-        int _fmt_len;
-        string result;
+    result += is_number_integer(value)
+        ? fmt::format("{}", number_to_integer(value))
+        : fmt::format("{}", number_to_double(value));
 
-        // integer        -> 1-7 bytes in memory
-        // double         -> 8 bytes in memory
-        // 63rd bit       -> sign
-        if (is_number_negative(value)) {
-            result += '-';
-        }
-
-        if (is_number_integer(value)) {
-            // Integer
-            _fmt_len = snprintf(
-                    _buff, sizeof(_buff),
-                    "%llu", number_to_integer(value)
-            );
-        } else {
-            // Double
-            int precision = 15;
-            const char *fmt;
-
-            switch (number_raw_cast<uint64_t>(value)) {
-                case 0x7FEFFFFFFFFFFFFF:
-                    return "1.7976931348623157e+308";
-                case 0xFFEFFFFFFFFFFFFF:
-                    return "-1.7976931348623157e+308";
-                default: {
-                    if ((value >= 1.0e21) || (floor(value) != value)) {
-                        if ((value < 1.0e21) && (value >= 0.000001)) {
-                            int l10 = (int) log10(value);
-                            int fpn = (l10 >= 0) ? l10 : 0;
-
-                            precision = 15 - (value >= 1.0) - fpn;
-                            if (precision > 15) {
-                                precision = 15;
-                            }
-
-                            fmt = "%20.*f";
-                        } else {
-                            fmt = "%20.*e";
-                            precision -= 1;
-                        }
-                    } else if (value >= 1000000000.0) {
-                        fmt = "%*.0f";
-                    } else {
-                        fmt = "%*.f";
-                    }
-                }
-            }
-
-            _fmt_len = snprintf(
-                    _buff, sizeof(_buff),
-                    fmt, precision, number_to_double(value)
-            );
-        }
-
-        _buff[_fmt_len] = '\0';
-        result += trim(_buff, ' ');
-
-        return simplify_number_literal(result);
-    }
+    return result;
 }
 
 bool bytes_eq(const uint8_t *b1, const uint8_t *b2, size_t size) {
@@ -444,12 +370,6 @@ bool bytes_eq(const uint8_t *b1, const uint8_t *b2, size_t size) {
     }
 
     return true;
-}
-
-void zero_mem(const void *buff, size_t size) {
-    for (int i = 0; i < size; ++i) {
-        ((uint8_t *) buff)[i] = '\0';
-    }
 }
 
 END_NS(utils) END_NS(jsxbin)

@@ -1,6 +1,9 @@
 #pragma once
 
+#include <algorithm>
+#include <cstring>
 #include <string>
+#include <type_traits>
 
 #include "common.h"
 
@@ -17,7 +20,7 @@ void string_strip_char(string& str, char search);
 
 void replace_str_inplace(string& subject, const string& search, const string& replace);
 
-string string_join(vector<string> strings, const string& delimiter);
+string string_join(const vector<string>& strings, const string& delimiter);
 
 string string_literal_escape(uint16_t value, bool capital = false);
 
@@ -31,6 +34,8 @@ string from_string_literal(const string &value);
 
 string to_string(const ByteString& value);
 
+string to_identifier(const ByteString& value);
+
 ByteString to_byte_string(const string& value);
 
 int byte_length(uint64_t value);
@@ -43,11 +48,14 @@ string number_to_string(double value);
 
 bool bytes_eq(const uint8_t* b1, const uint8_t* b2, size_t size);
 
-void zero_mem(const void* buff, size_t size);
-
 template<typename T, typename F>
 T number_raw_cast(F value) {
-    return *((T*) &value);
+    static_assert(std::is_trivially_copyable_v<T>);
+    static_assert(std::is_trivially_copyable_v<F>);
+
+    T result{};
+    std::memcpy(&result, &value, std::min(sizeof(T), sizeof(F)));
+    return result;
 }
 
 // returns an int repr of the number

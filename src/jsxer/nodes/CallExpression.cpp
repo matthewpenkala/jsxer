@@ -1,8 +1,6 @@
 #include "CallExpression.h"
 #include "Program.h"
 
-#include <fmt/format.h>
-
 namespace jsxer::nodes {
     void CallExpression::parse() {
         function = decoders::d_node(reader);
@@ -11,12 +9,17 @@ namespace jsxer::nodes {
     }
 
     string CallExpression::to_string() {
+        if (function == nullptr) {
+            return "";
+        }
+
         auto function_name = function->to_string();
         auto arguments = std::dynamic_pointer_cast<ListExpression>(args);
         bool needWrap = function->type() == NodeType::FunctionExpression;
         // {new }{funcName|funcBody}({args})
 
-        if (function_name == "eval" && arguments->arguments.size() == 1 && !constructorCall) {
+        if (function_name == "eval" && arguments != nullptr &&
+            arguments->arguments.size() == 1 && arguments->arguments[0] != nullptr && !constructorCall) {
             // Check if it has a JSXBIN signature.
 
             string payload = utils::from_string_literal(arguments->arguments[0]->to_string());
@@ -29,10 +32,7 @@ namespace jsxer::nodes {
                 internal_ast->parse();
                 string result = internal_ast->to_string();
 
-                if (result.back() == ';') {
-                    result.pop_back();
-                }
-                if (result.back() == ';') {
+                while (!result.empty() && result.back() == ';') {
                     result.pop_back();
                 }
 

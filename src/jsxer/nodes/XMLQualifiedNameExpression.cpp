@@ -11,7 +11,7 @@ namespace jsxer::nodes {
     }
 
     string XMLQualifiedNameExpression::to_string() {
-        auto ns_id = utils::to_string(namespaceObject.id);
+        auto ns_id = utils::to_identifier(namespaceObject.id);
         string ns = namespaceObject.flag ? '@' + ns_id : ns_id;
         return object->to_string() + '.' + ns + "::" + xmlId;
     }

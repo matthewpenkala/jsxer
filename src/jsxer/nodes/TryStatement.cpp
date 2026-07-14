@@ -5,8 +5,11 @@ namespace jsxer::nodes {
         tryBlock = decoders::d_line_info(reader);
         length = decoders::d_length(reader);
         finallyBlock = decoders::d_node(reader);
+        if (reader.error() != ParseError::None || !reader.claim_work(length)) {
+            return;
+        }
 
-        for (int i = 0; i < length; ++i) {
+        for (size_t i = 0; i < length; ++i) {
             layers.push_back({decoders::d_sid(reader),
                               decoders::d_node(reader),
                               decoders::d_node(reader)});

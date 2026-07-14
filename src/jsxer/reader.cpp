@@ -1,12 +1,12 @@
 #include <memory>
+#include <cstdint>
+#include <algorithm>
+#include <limits>
 #include "reader.h"
 #include "util.h"
 
-#include <fmt/format.h>
-
-
 using namespace jsxer;
-#define perror(msg) printf("[!] " msg ", POS: %lu\n", this->_cursor)
+#define JSXER_PARSE_ERROR(msg) fprintf(stderr, "[!] " msg ", POS: %zu\n", this->_cursor)
 
 Reader::Reader(const string& jsxbin, bool unblind) {
     string _input = jsxbin;
@@ -17,14 +17,16 @@ Reader::Reader(const string& jsxbin, bool unblind) {
     utils::string_strip_char(_input, '\n');
     utils::string_strip_char(_input, '\\');
 
-    size_t input_len = _input.length();
-
-    _data.resize(input_len);
-    memcpy(_data.data(), _input.data(), input_len);
-
-    _start = _cursor = 0;
-    _end = input_len - 1;
+    _data.assign(_input.begin(), _input.end());
+    _cursor = 0;
     _depth = 0;
+
+    constexpr size_t minimum_budget = 4096;
+    constexpr size_t expansion_factor = 128;
+    const size_t maximum_size = std::numeric_limits<size_t>::max();
+    _work_budget = _data.size() > (maximum_size - minimum_budget) / expansion_factor
+        ? maximum_size
+        : std::max(minimum_budget, (_data.size() * expansion_factor) + minimum_budget);
 
     _error = ParseError::None;
     _version = JsxbinVersion::Invalid;
@@ -47,12 +49,39 @@ bool Reader::should_unblind() const {
     return _unblind;
 }
 
+bool Reader::claim_work(size_t count) {
+    if (count > _work_budget) {
+        _error = ParseError::DecodeError;
+        return false;
+    }
+
+    _work_budget -= count;
+    return true;
+}
+
+void Reader::fail_decode() {
+    _error = ParseError::DecodeError;
+}
+
 void Reader::step(int offset) {
-    _cursor += offset;
+    const auto next = static_cast<std::int64_t>(_cursor) + static_cast<std::int64_t>(offset);
+    if (next < 0 || static_cast<size_t>(next) > _data.size()) {
+        _error = ParseError::ReachedEnd;
+        _cursor = next < 0 ? 0 : _data.size();
+        return;
+    }
+
+    _cursor = static_cast<size_t>(next);
 }
 
 Token Reader::peek(int offset) {
-    return _data[_cursor + offset];
+    const auto index = static_cast<std::int64_t>(_cursor) + static_cast<std::int64_t>(offset);
+    if (index < 0 || static_cast<size_t>(index) >= _data.size()) {
+        _error = ParseError::ReachedEnd;
+        return 0;
+    }
+
+    return _data[static_cast<size_t>(index)];
 }
 
 size_t Reader::get_node_depth() {
@@ -65,6 +94,9 @@ size_t Reader::get_node_depth() {
 
 int Reader::parse_node_depth() {
     Token current = peek();
+    if (_error != ParseError::None) {
+        return 0;
+    }
 
     if (current == 'A') {
         step();
@@ -72,7 +104,13 @@ int Reader::parse_node_depth() {
 
     } else if (current == '0') {
         step();
-        int levels = get() - 0x3f;
+        const Token encoded_levels = get();
+        if (_error != ParseError::None || encoded_levels < 0x40 || encoded_levels > 0x5a) {
+            _error = ParseError::DecodeError;
+            return 0;
+        }
+
+        const int levels = encoded_levels - 0x3f;
 
         if (levels > 0x1b) {
             return levels + parse_node_depth();
@@ -118,7 +156,7 @@ bool Reader::verifySignature() {
         return false;
     }
 
-    _start = _cursor += JSXBIN_SIGNATURE_LEN;
+    _cursor = JSXBIN_SIGNATURE_LEN;
 
     return true;
 }
@@ -134,6 +172,10 @@ Token Reader::get() {
 }
 
 Byte Reader::getByte() {
+    if (_error != ParseError::None) {
+        return 0;
+    }
+
     if (_depth > 0) {
         --_depth;
         return 0;
@@ -144,7 +186,7 @@ Byte Reader::getByte() {
     if (m == '0') {
         Token n = get();
 
-        if (n > 0x5A) {
+        if (_error != ParseError::None || n < 0x40 || n > 0x5A) {
             goto error8;
         } else {
             _depth = n - 0x40;
@@ -175,18 +217,29 @@ Byte Reader::getByte() {
 
 error8:
     _error = ParseError::DecodeError;
-    perror("Parse Error at getByte()");
+        JSXER_PARSE_ERROR("Parse Error at getByte()");
     return 0;
 }
 
 Number Reader::getNumber() {
+    if (_error != ParseError::None) {
+        return 0.0;
+    }
+
     if (_depth > 0) {
         --_depth;
         return 0.0;
     }
 
     Token t = get();
+    if (_error != ParseError::None) {
+        return 0.0;
+    }
+
     Number res = 0, sign = (t != 'y') ? 1.0 : (t = get(), -1.0);
+    if (_error != ParseError::None) {
+        return 0.0;
+    }
 
     switch (t) {
         case '2':
@@ -211,8 +264,13 @@ ByteString Reader::getString() {
     ByteString result;
 
     auto length = utils::number_as_int<size_t>(getNumber());
+    if (_error != ParseError::None || !claim_work(length)) {
+        return result;
+    }
 
-    for (int i = 0; i < length; ++i) {
+    result.reserve(length);
+
+    for (size_t i = 0; i < length; ++i) {
         // Each char is a unicode (utf-16) codepoint.
         auto u16_ch = utils::number_as_int<uint16_t>(getNumber());
         result.push_back(u16_ch);
@@ -223,6 +281,9 @@ ByteString Reader::getString() {
 
 bool Reader::getBoolean() {
     Token t = get();
+    if (_error != ParseError::None) {
+        return false;
+    }
 
     if (t == 't') {
         return true;
@@ -230,7 +291,7 @@ bool Reader::getBoolean() {
         return false;
     } else {
         _error = ParseError::DecodeError;
-        perror("Parse Error at getBoolean()");
+        JSXER_PARSE_ERROR("Parse Error at getBoolean()");
     }
 
     return false;
@@ -240,7 +301,12 @@ ByteString Reader::readSID(bool operator_context) {
     ByteString symbol;
     Number id;
 
-    if (get() == 'z') {
+    const Token marker = get();
+    if (_error != ParseError::None) {
+        return {};
+    }
+
+    if (marker == 'z') {
         symbol = getString();
         id = getNumber();
 
@@ -248,7 +314,7 @@ ByteString Reader::readSID(bool operator_context) {
 
         // if a symbol name is obfuscated, rename it to something more sensible...
         if (_unblind && jsxer::deob::jsxblind_should_substitute(deobfuscationContext, symbol, operator_context)) {
-            string deobfuscated = "symbol_" + fmt::to_string(id_int);
+            string deobfuscated = "symbol_" + std::to_string(id_int);
             symbol = utils::to_byte_string(deobfuscated);
         }
 
@@ -266,7 +332,12 @@ ByteString Reader::readLiteral() {
     ByteString symbol;
     Number id;
 
-    if (get() == 'z') {
+    const Token marker = get();
+    if (_error != ParseError::None) {
+        return {};
+    }
+
+    if (marker == 'z') {
         symbol = getString();
         id = getNumber();
         addSymbol(id, symbol);
@@ -280,7 +351,12 @@ ByteString Reader::readLiteral() {
 }
 
 OpVariant Reader::getVariant() {
-    if (get() == 'n') {
+    const Token marker = get();
+    if (_error != ParseError::None) {
+        return nullptr;
+    }
+
+    if (marker == 'n') {
         return nullptr;
     } else {
         step(-1);
@@ -316,7 +392,7 @@ OpVariant Reader::getVariant() {
 
         default:
             _error = ParseError::DecodeError;
-            perror("Parse Error at getVariant()");
+            JSXER_PARSE_ERROR("Parse Error at getVariant()");
             break;
     }
 
@@ -324,13 +400,12 @@ OpVariant Reader::getVariant() {
 }
 
 Token Reader::_next() {
-    if (_cursor < _end) {
+    if (_cursor < _data.size()) {
         return _data[_cursor++];
     }
 
     _error = ParseError::ReachedEnd;
-
-    return _data[_end];
+    return 0;
 }
 
 bool Reader::_ignorable(Token value) {
@@ -346,7 +421,13 @@ bool Reader::_ignorable(Token value) {
 }
 
 ByteString Reader::getSymbol(Number id) {
-    return _symbols[id];
+    const auto symbol = _symbols.find(id);
+    if (symbol == _symbols.end()) {
+        _error = ParseError::DecodeError;
+        return {};
+    }
+
+    return symbol->second;
 }
 
 void Reader::addSymbol(Number id, const ByteString& symbol) {
@@ -392,11 +473,9 @@ void Variant::setString(const ByteString& value) {
 }
 
 void Variant::doErase() {
-    if (_type == VariantType::String) {
-        _value._string.clear();
-    }
-
-    utils::zero_mem(&_value, sizeof(ValueType));
+    _value._bool = false;
+    _value._double = 0.0;
+    _value._string.clear();
 }
 
 String Variant::toString() {

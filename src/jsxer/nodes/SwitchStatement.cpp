@@ -6,7 +6,11 @@ namespace jsxer::nodes {
         switchValue = decoders::d_node(reader);
 
         size_t len_cases = decoders::d_length(reader);
-        for (int i = 0; i < len_cases; ++i) {
+        if (reader.error() != ParseError::None || !reader.claim_work(len_cases)) {
+            return;
+        }
+
+        for (size_t i = 0; i < len_cases; ++i) {
             auto node = decoders::d_node(reader);
             if (node != nullptr) {
                 cases.push_back(node);
@@ -14,7 +18,11 @@ namespace jsxer::nodes {
         }
 
         size_t len_implementations = decoders::d_length(reader);
-        for (int i = 0; i < len_implementations; ++i) {
+        if (reader.error() != ParseError::None || !reader.claim_work(len_implementations)) {
+            return;
+        }
+
+        for (size_t i = 0; i < len_implementations; ++i) {
             auto node = decoders::d_node(reader);
             if (node != nullptr) {
                 implementations.push_back(node);
@@ -24,20 +32,27 @@ namespace jsxer::nodes {
     }
 
     string SwitchStatement::to_string() {
-        string result = "switch (" + switchValue->to_string() + ") { \n";
+        string result = "switch (" + (switchValue == nullptr ? "" : switchValue->to_string()) + ") { \n";
 
-        for (int i = 0; i < cases.size(); ++i) {
-            vector<AstOpNode> caseArgs = std::dynamic_pointer_cast<ListExpression>(cases[i])->arguments;
+        for (size_t i = 0; i < cases.size(); ++i) {
+            const auto case_list = std::dynamic_pointer_cast<ListExpression>(cases[i]);
+            if (case_list == nullptr) {
+                continue;
+            }
+
+            vector<AstOpNode> caseArgs = case_list->arguments;
             if (!caseArgs.empty()) {
                 for (const auto& arg: caseArgs) {
-                    result += "case " + arg->to_string() + ":\n";
+                    if (arg != nullptr) {
+                        result += "case " + arg->to_string() + ":\n";
+                    }
                 }
             } else {
                 result += "default:\n";
             }
 
             // now for each case implementation...
-            if (i < implementations.size()) {
+            if (i < implementations.size() && implementations[i] != nullptr) {
                 result += implementations[i]->to_string() + '\n';
             }
         }

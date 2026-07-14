@@ -11,6 +11,6 @@ namespace jsxer::nodes {
     }
 
     string XMLDescendantsExpression::to_string() {
-        return object->to_string() + ".." + utils::to_string(descendants.id);
+        return object->to_string() + ".." + utils::to_identifier(descendants.id);
     }
 }

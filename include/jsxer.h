@@ -17,6 +17,12 @@ enum class JsxbinVersion : uint16_t {
     v21 = 0x0201,
 };
 
+enum class DecompileResult : int {
+    Success = 0,
+    InvalidSignature = -3,
+    DecodeError = -4,
+};
+
 namespace jsxer {
     int decompile(const string& input, string& output, bool unblind = false);
 

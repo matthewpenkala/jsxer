@@ -7,8 +7,11 @@ namespace jsxer::nodes {
         objectId = decoders::d_sid(reader);
 
         size_t child_count = decoders::d_length(reader);
+        if (reader.error() != ParseError::None || !reader.claim_work(child_count)) {
+            return;
+        }
 
-        for (int i = 0; i < child_count; ++i) {
+        for (size_t i = 0; i < child_count; ++i) {
             string id = decoders::d_sid(reader);
             AstOpNode node = decoders::d_node(reader);
             properties[id] = node;
@@ -19,15 +22,15 @@ namespace jsxer::nodes {
         string result = "{";
 
         if (!properties.empty()) {
-            int i = 0;
-            for (std::pair<string, AstOpNode> entry: properties) {
+            size_t i = 0;
+            for (const auto& entry: properties) {
                 if (!decoders::valid_id(entry.first)) {
                     result += utils::to_string_literal(entry.first);
                 } else {
                     result += entry.first;
                 }
 
-                result += ": " + entry.second->to_string();
+                result += ": " + (entry.second == nullptr ? "" : entry.second->to_string());
 
                 if ((i + 1) < properties.size())
                     result += ", ";
